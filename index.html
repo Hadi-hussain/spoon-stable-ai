@@ -235,6 +235,11 @@
                 .widget-footer button:hover {
                     background: var(--accent-gold-hover);
                 }
+
+                .widget-footer button:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
     </style>
 </head>
 <body>
@@ -264,7 +269,7 @@
 
         <div class="widget-footer">
             <input type="text" id="w-input" placeholder="Inquire about menu, hours, parking..." onkeypress="if(event.key==='Enter') sendWMessage()">
-            <button onclick="sendWMessage()">
+            <button id="w-btn" onclick="sendWMessage()">
                 <i data-lucide="send" style="width: 16px; height: 16px;"></i>
             </button>
         </div>
@@ -276,18 +281,23 @@
         function toggleWidget() {
             const popup = document.getElementById('chat-popup');
             popup.classList.toggle('active');
+            if (popup.classList.contains('active')) {
+                document.getElementById('w-input').focus();
+            }
         }
 
         async function sendWMessage() {
             const input = document.getElementById('w-input');
+            const btn = document.getElementById('w-btn');
             const text = input.value.trim();
             if (!text) return;
 
             appendMsg('user', text);
             input.value = '';
+            input.disabled = true;
+            btn.disabled = true;
 
             try {
-                // Uses relative path so it seamlessly works locally and on Vercel
                 const res = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -296,13 +306,17 @@
 
                 const data = await res.json();
 
-                if (res.ok && data.response) {
+                if (data.response) {
                     appendMsg('bot', data.response);
                 } else {
                     appendMsg('bot', '⚠️ Error generating response. Please try again.');
                 }
             } catch (e) {
                 appendMsg('bot', '⚠️ Connection error. Please ensure the server is active.');
+            } finally {
+                input.disabled = false;
+                btn.disabled = false;
+                input.focus();
             }
         }
 
