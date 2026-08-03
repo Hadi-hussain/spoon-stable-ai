@@ -155,7 +155,7 @@ def make_reservation(req: ReservationRequest):
     res_id = save_reservation(req.name, req.phone, req.date, req.time, req.guests)
     return {"status": "success", "reservation_id": res_id}
 
-# 3. Chat Endpoint (Concise AI Concierge with Function Calling)
+# 3. Chat Endpoint (Strict Concierge Behavior)
 @app.post("/chat")
 def chat(req: ChatRequest):
     if not client:
@@ -172,7 +172,7 @@ def chat(req: ChatRequest):
             "type": "function",
             "function": {
                 "name": "book_reservation",
-                "description": "Book a reservation at Spoon & Stable when all required guest details are provided.",
+                "description": "Call this ONLY when the guest explicitly asks to book a reservation and has provided Name, Phone, Date, Time, and Guest Count.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -189,17 +189,17 @@ def chat(req: ChatRequest):
     ]
 
     system_prompt = f"""
-You are the elite AI Concierge for 'Spoon & Stable', a high-end French-inspired Midwestern fine dining restaurant.
+You are the elite AI Concierge for 'Spoon & Stable'. 
 Your tone is warm, professional, sophisticated, and concise.
 
 Use the following detailed Knowledge Base to answer guest queries:
 {kb_content}
 
-CRITICAL FORMATTING INSTRUCTIONS:
-- ALWAYS keep responses extremely brief (STRICTLY 2 TO 3 SHORT LINES MAXIMUM).
-- Do not add unnecessary fluff or lengthy greetings.
-- If the user wants to make a reservation, request their Name, Phone, Date, Time, and Guest count in one clear, short sentence.
-- When the guest provides ALL 5 required details, call `book_reservation` immediately.
+RULES:
+- KEEP RESPONSES VERY BRIEF (2 TO 3 LINES MAXIMUM).
+- DO NOT mention reservations or ask for booking details UNLESS the user explicitly asks to make a reservation or book a table.
+- If the user asks about menu items, hours, dress code, or general questions, simply answer their question directly.
+- Only if the user says they want to book/reserve a table, ask them for: Name, Phone, Date, Time, and Number of Guests.
     """
 
     try:
@@ -211,8 +211,8 @@ CRITICAL FORMATTING INSTRUCTIONS:
             ],
             tools=tools,
             tool_choice="auto",
-            temperature=0.5,
-            max_tokens=100
+            temperature=0.4,
+            max_tokens=120
         )
 
         message = completion.choices[0].message
