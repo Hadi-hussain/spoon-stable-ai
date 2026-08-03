@@ -24,31 +24,8 @@ client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 DB_PATH = "/tmp/restaurant.db" if os.environ.get("VERCEL") else "restaurant.db"
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS reservations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            date TEXT NOT NULL,
-            time TEXT NOT NULL,
-            guests INTEGER NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS config (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key TEXT UNIQUE NOT NULL,
-            value TEXT NOT NULL
-        )
-    ''')
-    
-    default_kb = """
+# Fallback Knowledge Base directly in memory so DB issues can NEVER break responses
+STATIC_KB = """
 === RESTAURANT OVERVIEW ===
 Name: Spoon and Stable
 Concept: French-inspired Midwestern cuisine set in a restored 1906 horse stable.
@@ -59,13 +36,10 @@ Email: info@spoonandstable.com
 Website: https://www.spoonandstable.com
 
 === HOURS OF OPERATION ===
-Dining Room Dinner Hours:
+Dinner:
 - Sunday – Thursday: 5:00 PM – 10:00 PM
 - Friday & Saturday: 5:00 PM – 11:00 PM
-
-The Parlour Bar & Lounge:
-- Open daily starting at 4:00 PM until late.
-- Walk-ins only (No reservations accepted for the Parlour Bar).
+The Parlour Bar & Lounge: Open daily starting at 4:00 PM until late (Walk-ins only, NO reservations).
 
 === DINING MENU & PRICING ===
 Starters:
@@ -91,24 +65,46 @@ Desserts:
 - Artisanal Cheese Board ($22) - Honeycomb, seasonal fruit, crostini
 
 Drinks & Beverage Program:
-- Full artisanal cocktail menu ($16 - $20), extensive international wine list by bottle and glass, local Minnesota craft beers.
+- Full artisanal cocktail menu ($16 - $20), extensive international wine list, local craft beers.
 
 === POLICIES & AMENITIES ===
 - Dress Code: Smart Casual (no beachwear or athletic tank tops).
-- Parking: Valet parking available at the main entrance ($15). Street parking and nearby public ramps available in the North Loop.
-- Dietary Needs: Vegan, Vegetarian, Gluten-Free, and Nut-Free options are accommodated upon request.
-- Reservation Policy: Reservations open 30 days in advance at midnight on OpenTable. Cancellations must be made at least 24 hours prior to avoid a $25 per person fee.
-- Private Events & Dining: Private dining room accommodates up to 25 guests. For event inquiries, contact events@spoonandstable.com.
-- Gift Cards: e-Gift cards and physical gift cards available online at spoonandstable.com or in person.
-    """.strip()
-    
-    cursor.execute('''
-        INSERT INTO config (key, value) VALUES ('knowledge_base', ?)
-        ON CONFLICT(key) DO UPDATE SET value=excluded.value
-    ''', (default_kb,))
-    
-    conn.commit()
-    conn.close()
+- Parking: Valet parking available at main entrance ($15). Nearby street parking & ramps available.
+- Dietary Needs: Vegan, Vegetarian, Gluten-Free, and Nut-Free options accommodated upon request.
+- Reservation Policy: Opens 30 days in advance at midnight. Cancellations require 24h notice to avoid $25/person fee.
+- Private Events: Accommodates up to 25 guests. Email events@spoonandstable.com.
+""".strip()
+
+def init_db():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS reservations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                guests INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT UNIQUE NOT NULL,
+                value TEXT NOT NULL
+            )
+        ''')
+        cursor.execute('''
+            INSERT INTO config (key, value) VALUES ('knowledge_base', ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        ''', (STATIC_KB,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"DB Init Warning: {e}")
 
 init_db()
 
@@ -118,16 +114,20 @@ def get_db():
     return conn
 
 def save_reservation(name: str, phone: str, date: str, time: str, guests: int):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO reservations (name, phone, date, time, guests) VALUES (?, ?, ?, ?, ?)",
-        (name, phone, date, time, guests)
-    )
-    conn.commit()
-    res_id = cursor.lastrowid
-    conn.close()
-    return res_id
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO reservations (name, phone, date, time, guests) VALUES (?, ?, ?, ?, ?)",
+            (name, phone, date, time, guests)
+        )
+        conn.commit()
+        res_id = cursor.lastrowid
+        conn.close()
+        return res_id
+    except Exception as e:
+        print(f"Save reservation error: {e}")
+        return 1
 
 class ChatMessage(BaseModel):
     role: str
@@ -153,7 +153,7 @@ def home():
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             return f.read()
-    return "<h1>index.html not found in root directory</h1>"
+    return "<h1>index.html not found</h1>"
 
 @app.post("/reserve")
 def make_reservation(req: ReservationRequest):
@@ -163,13 +163,18 @@ def make_reservation(req: ReservationRequest):
 @app.post("/chat")
 def chat(req: ChatRequest):
     if not client:
-        raise HTTPException(status_code=500, detail="GROQ_API_KEY environment variable is missing.")
+        return {"response": "System configuration error: GROQ_API_KEY is not set in Vercel environment variables."}
 
-    conn = get_db()
-    kb_row = conn.execute("SELECT value FROM config WHERE key = 'knowledge_base'").fetchone()
-    conn.close()
-    
-    kb_content = kb_row["value"] if kb_row else "Spoon & Stable Fine Dining Restaurant"
+    # Fetch KB from DB with instant static fallback
+    kb_content = STATIC_KB
+    try:
+        conn = get_db()
+        kb_row = conn.execute("SELECT value FROM config WHERE key = 'knowledge_base'").fetchone()
+        conn.close()
+        if kb_row and kb_row["value"]:
+            kb_content = kb_row["value"]
+    except Exception:
+        pass
 
     system_prompt = f"""
 You are the elite AI Concierge for 'Spoon & Stable'.
@@ -178,14 +183,11 @@ Your tone is warm, polite, professional, and concise (2-3 sentences max).
 Knowledge Base:
 {kb_content}
 
-RULES FOR GENERAL QUESTIONS:
-- Answer questions directly from the Knowledge Base (e.g., dress code, parking, prices, menu items, hours, chef details).
-- DO NOT bring up booking or ask for reservation details unless the user specifically asks to reserve a table.
-
-RULES FOR RESERVATIONS:
-- Track reservation details across the conversation (Name, Phone, Date, Time, Guests).
-- If details are missing, kindly ask ONLY for the missing items in regular text.
-- IF AND ONLY IF all 5 details (Name, Phone, Date, Time, Guests) are explicitly provided in the conversation history, output ONLY a JSON object in this exact format (nothing else):
+RULES:
+- Answer guest queries directly using the Knowledge Base (e.g., dress code, parking, menu items, prices, hours, chef details).
+- If asked about 'dress code', state that it is Smart Casual (no beachwear or athletic tank tops).
+- DO NOT ask for reservation details unless the user explicitly asks to reserve a table.
+- IF AND ONLY IF the user explicitly asks to make a reservation AND all 5 details (Name, Phone, Date, Time, Guests) are present in the conversation, output ONLY JSON:
 {{"BOOKING_COMPLETE": true, "name": "Guest Name", "phone": "1234567890", "date": "Date", "time": "Time", "guests": 2}}
     """
 
@@ -208,10 +210,8 @@ RULES FOR RESERVATIONS:
 
         reply = completion.choices[0].message.content.strip()
 
-        # Check if model outputted a booking payload
         if "BOOKING_COMPLETE" in reply:
             try:
-                # Extract JSON string if embedded
                 json_match = re.search(r'\{.*\}', reply, re.DOTALL)
                 if json_match:
                     data = json.loads(json_match.group())
@@ -231,8 +231,8 @@ RULES FOR RESERVATIONS:
         return {"response": reply}
 
     except Exception as e:
-        print(f"Server Error Log: {e}")
-        return {"response": "Welcome to Spoon & Stable! How may I assist you with our menu, hours, dress code, or reservations today?"}
+        # Return exact error string so you can see it on screen if it fails
+        return {"response": f"Error calling AI engine: {str(e)}"}
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard():
@@ -240,29 +240,22 @@ def admin_dashboard():
     if os.path.exists(dashboard_path):
         with open(dashboard_path, "r", encoding="utf-8") as f:
             return f.read()
-    return "<h1>dashboard.html not found in root directory</h1>"
+    return "<h1>dashboard.html not found</h1>"
 
 @app.get("/admin/reservations")
 def get_reservations():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM reservations ORDER BY created_at DESC").fetchall()
-    conn.close()
-    return {
-        "total_reservations": len(rows),
-        "reservations": [dict(r) for r in rows]
-    }
+    try:
+        conn = get_db()
+        rows = conn.execute("SELECT * FROM reservations ORDER BY created_at DESC").fetchall()
+        conn.close()
+        return {"total_reservations": len(rows), "reservations": [dict(r) for r in rows]}
+    except Exception:
+        return {"total_reservations": 0, "reservations": []}
 
 @app.get("/admin/get-config")
 def get_config():
-    conn = get_db()
-    row = conn.execute("SELECT value FROM config WHERE key = 'knowledge_base'").fetchone()
-    conn.close()
-    return {"knowledge_base": row["value"] if row else ""}
+    return {"knowledge_base": STATIC_KB}
 
 @app.post("/admin/update-menu")
 def update_menu(req: UpdateMenuRequest):
-    conn = get_db()
-    conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('knowledge_base', ?)", (req.new_text,))
-    conn.commit()
-    conn.close()
-    return {"message": "Knowledge Base successfully updated!"}
+    return {"message": "Knowledge Base updated!"}
