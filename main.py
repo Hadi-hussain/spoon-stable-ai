@@ -1,6 +1,7 @@
 ﻿import os
 import sqlite3
 import json
+from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +10,6 @@ from groq import Groq
 
 app = FastAPI(title="Spoon & Stable Concierge API")
 
-# Enable CORS for frontend widgets
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,18 +18,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Groq Client
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-# Database Path Configuration (Vercel serverless fix)
 DB_PATH = "/tmp/restaurant.db" if os.environ.get("VERCEL") else "restaurant.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Table for reservations
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reservations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +39,6 @@ def init_db():
         )
     ''')
     
-    # Table for knowledge base configuration
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +47,6 @@ def init_db():
         )
     ''')
     
-    # Official & Comprehensive Knowledge Base for Spoon & Stable
     default_kb = """
 === RESTAURANT OVERVIEW ===
 Name: Spoon and Stable
@@ -133,8 +128,14 @@ def save_reservation(name: str, phone: str, date: str, time: str, guests: int):
     conn.close()
     return res_id
 
+# Updated Data Models for Conversation History
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
-    message: str
+    message: str = ""
+    history: List[ChatMessage] = []
 
 class ReservationRequest(BaseModel):
     name: str
@@ -175,7 +176,7 @@ def chat(req: ChatRequest):
             "type": "function",
             "function": {
                 "name": "book_reservation",
-                "description": "Book a reservation ONLY when the guest explicitly provided ALL 5 items: Name, Phone, Date, Time, and Guest Count in their message. DO NOT guess missing fields.",
+                "description": "Book a reservation ONLY when the guest explicitly provided ALL 5 items: Name, Phone, Date, Time, and Guest Count. DO NOT guess missing fields.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -201,18 +202,28 @@ Knowledge Base:
 CRITICAL RULES:
 - Keep answers concise (2 to 3 sentences maximum).
 - Give accurate prices and dish descriptions directly from the Knowledge Base when asked.
+- You have access to conversation history. Remember what the user said earlier in the conversation.
 - NEVER call `book_reservation` or say a reservation is confirmed unless the user explicitly gave you ALL 5 pieces of information: Name, Phone Number, Date, Time, and Party Size.
 - If ANY detail is missing (e.g. phone number), kindly ask the user to provide the missing item before confirming.
 - Note policy: The Parlour Bar does NOT accept reservations (walk-ins only).
     """
 
+    # Build full message history list for Groq
+    messages_payload = [{"role": "system", "content": system_prompt}]
+    
+    # Append existing history
+    for msg in req.history:
+        if msg.role in ["user", "assistant"]:
+            messages_payload.append({"role": msg.role, "content": msg.content})
+            
+    # Append current user message if provided separately
+    if req.message and (not req.history or req.history[-1].content != req.message):
+        messages_payload.append({"role": "user", "content": req.message})
+
     try:
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": req.message}
-            ],
+            messages=messages_payload,
             tools=tools,
             tool_choice="auto",
             temperature=0.3,
