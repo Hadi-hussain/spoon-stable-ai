@@ -1,0 +1,585 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concierge Portal | Spoon & Stable</title>
+    <!-- Premium Google Fonts & FontAwesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-body: #0a0b0d;
+            --bg-sidebar: #121316;
+            --bg-card: #16181d;
+            --bg-card-hover: #1f2229;
+            --border-subtle: #262930;
+            --border-gold: rgba(223, 177, 91, 0.3);
+            --text-main: #f4f4f6;
+            --text-muted: #8e939e;
+            --accent-gold: #dfb15b;
+            --accent-gold-gradient: linear-gradient(135deg, #f3d081 0%, #c49539 100%);
+            --accent-green: #34d399;
+            --accent-green-bg: rgba(52, 211, 153, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* --- SIDEBAR --- */
+        sidebar {
+            width: 270px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            padding: 32px 20px;
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+        }
+
+        .brand-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding-bottom: 28px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .brand-logo {
+            width: 44px;
+            height: 44px;
+            background: var(--accent-gold-gradient);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #0d0e11;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 20px rgba(223, 177, 91, 0.25);
+        }
+
+        .brand-title {
+            font-family: 'Cinzel', serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 0.5px;
+        }
+
+        .brand-subtitle {
+            font-size: 0.7rem;
+            color: var(--accent-gold);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        .nav-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 18px;
+            border-radius: 10px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.25s ease;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+
+            .nav-item:hover {
+                background: var(--bg-card);
+                color: var(--text-main);
+                border-color: var(--border-subtle);
+            }
+
+            .nav-item.active {
+                background: var(--bg-card);
+                color: var(--accent-gold);
+                border-color: var(--border-gold);
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            }
+
+            .nav-item i {
+                font-size: 1.1rem;
+            }
+
+        /* --- MAIN CONTENT AREA --- */
+        main {
+            margin-left: 270px;
+            flex: 1;
+            padding: 40px 48px;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 36px;
+        }
+
+        .page-title {
+            font-family: 'Cinzel', serif;
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 0.5px;
+        }
+
+        .page-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        .btn-refresh {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-main);
+            padding: 12px 22px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.25s ease;
+        }
+
+            .btn-refresh:hover {
+                background: var(--bg-card-hover);
+                border-color: var(--accent-gold);
+                color: var(--accent-gold);
+                box-shadow: 0 0 15px rgba(223, 177, 91, 0.15);
+            }
+
+        /* --- METRICS CARDS --- */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 36px;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 24px 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.25s ease;
+        }
+
+            .metric-card:hover {
+                border-color: var(--border-gold);
+                transform: translateY(-3px);
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            }
+
+        .metric-info p {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .metric-info h3 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-top: 8px;
+            color: #fff;
+        }
+
+        .metric-icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .icon-status {
+            background: var(--accent-green-bg);
+            color: var(--accent-green);
+            border-color: rgba(52, 211, 153, 0.2);
+        }
+
+        .icon-res {
+            background: rgba(223, 177, 91, 0.08);
+            color: var(--accent-gold);
+            border-color: var(--border-gold);
+        }
+
+        .icon-engine {
+            background: rgba(255, 255, 255, 0.04);
+            color: #fff;
+        }
+
+        /* --- TABLE CONTAINER --- */
+        .content-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+            .card-header h2 {
+                font-family: 'Cinzel', serif;
+                font-size: 1.25rem;
+                font-weight: 600;
+                color: #fff;
+            }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            padding: 16px 18px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-subtle);
+            font-weight: 600;
+        }
+
+        td {
+            padding: 18px;
+            font-size: 0.9rem;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-main);
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        tbody tr {
+            transition: background 0.2s ease;
+        }
+
+            tbody tr:hover {
+                background: var(--bg-card-hover);
+            }
+
+        .res-id {
+            font-family: monospace;
+            font-weight: 700;
+            color: var(--accent-gold);
+        }
+
+        .guest-name {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: var(--accent-green-bg);
+            color: var(--accent-green);
+            border: 1px solid rgba(52, 211, 153, 0.2);
+        }
+
+            .status-badge::before {
+                content: '';
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--accent-green);
+                box-shadow: 0 0 8px var(--accent-green);
+            }
+
+        /* --- KNOWLEDGE BASE SECTION --- */
+        .hidden {
+            display: none;
+        }
+
+        textarea {
+            width: 100%;
+            height: 420px;
+            background: #0d0e11;
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 20px;
+            color: #e5e7eb;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            resize: vertical;
+            margin-bottom: 20px;
+            transition: border-color 0.25s;
+        }
+
+            textarea:focus {
+                outline: none;
+                border-color: var(--accent-gold);
+                box-shadow: 0 0 15px rgba(223, 177, 91, 0.1);
+            }
+
+        .btn-save {
+            background: var(--accent-gold-gradient);
+            color: #0d0e11;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 15px rgba(223, 177, 91, 0.2);
+        }
+
+            .btn-save:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(223, 177, 91, 0.35);
+            }
+    </style>
+</head>
+<body>
+
+    <!-- SIDEBAR -->
+    <sidebar>
+        <div class="brand-header">
+            <div class="brand-logo"><i class="fa-solid fa-utensils"></i></div>
+            <div>
+                <div class="brand-title">Spoon & Stable</div>
+                <div class="brand-subtitle">Executive Dashboard</div>
+            </div>
+        </div>
+
+        <nav class="nav-menu">
+            <a class="nav-item active" id="nav-reservations" onclick="showSection('reservations')">
+                <i class="fa-solid fa-calendar-check"></i>
+                <span>Reservations</span>
+            </a>
+            <a class="nav-item" id="nav-knowledge" onclick="showSection('knowledge')">
+                <i class="fa-solid fa-sliders"></i>
+                <span>Knowledge Base</span>
+            </a>
+        </nav>
+    </sidebar>
+
+    <!-- MAIN CONTENT -->
+    <main>
+        <div class="top-bar">
+            <div>
+                <h1 class="page-title" id="page-heading">Live Reservations</h1>
+                <p class="page-subtitle">Real-time guest bookings recorded by your Virtual Concierge</p>
+            </div>
+            <button class="btn-refresh" onclick="loadData()">
+                <i class="fa-solid fa-arrows-rotate"></i> Refresh Ledger
+            </button>
+        </div>
+
+        <!-- METRICS ROW -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-info">
+                    <p>System Status</p>
+                    <h3 style="color: var(--accent-green);">Operational</h3>
+                </div>
+                <div class="metric-icon icon-status">
+                    <i class="fa-solid fa-shield-check"></i>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-info">
+                    <p>Total Bookings</p>
+                    <h3 id="stat-count">0</h3>
+                </div>
+                <div class="metric-icon icon-res">
+                    <i class="fa-solid fa-user-check"></i>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-info">
+                    <p>AI Engine</p>
+                    <h3>LLaMA 3.3 70B</h3>
+                </div>
+                <div class="metric-icon icon-engine">
+                    <i class="fa-solid fa-microchip"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 1: RESERVATIONS TABLE -->
+        <section id="section-reservations" class="content-card">
+            <div class="card-header">
+                <h2>Captured Guest Reservations</h2>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Guest Name</th>
+                            <th>Contact</th>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Party Size</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reservations-table-body">
+                        <tr>
+                            <td colspan="7" style="text-align: center; color: var(--text-muted);">Fetching table records...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- SECTION 2: KNOWLEDGE BASE EDITOR -->
+        <section id="section-knowledge" class="content-card hidden">
+            <div class="card-header">
+                <h2>Concierge Knowledge Base</h2>
+            </div>
+            <textarea id="kb-editor" placeholder="Loading concierge knowledge..."></textarea>
+            <button class="btn-save" onclick="saveKnowledgeBase()">
+                <i class="fa-solid fa-floppy-disk"></i> Update Knowledge Base
+            </button>
+        </section>
+    </main>
+
+    <script>
+        // Fetch Reservations & Stats
+        async function loadData() {
+            try {
+                const res = await fetch('/admin/reservations');
+                const data = await res.json();
+
+                document.getElementById('stat-count').innerText = data.total_reservations;
+
+                const tbody = document.getElementById('reservations-table-body');
+                if (data.reservations.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:var(--text-muted);">No reservations recorded yet.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.reservations.map(r => `
+                        <tr>
+                            <td class="res-id">#${r.id}</td>
+                            <td class="guest-name">${r.name}</td>
+                            <td>${r.phone}</td>
+                            <td>${r.date}</td>
+                            <td>${r.time}</td>
+                            <td>${r.guests} guests</td>
+                            <td><span class="status-badge">Confirmed</span></td>
+                        </tr>
+                    `).join('');
+            } catch (err) {
+                console.error("Error loading reservations:", err);
+            }
+        }
+
+        // Fetch Knowledge Base Text
+        async function loadKnowledgeBase() {
+            try {
+                const res = await fetch('/admin/get-config');
+                const data = await res.json();
+                document.getElementById('kb-editor').value = data.knowledge_base;
+            } catch (err) {
+                console.error("Error loading config:", err);
+            }
+        }
+
+        // Save Knowledge Base Changes
+        async function saveKnowledgeBase() {
+            const newText = document.getElementById('kb-editor').value;
+            try {
+                const res = await fetch('/admin/update-menu', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ new_text: newText })
+                });
+                if (res.ok) {
+                    alert('✅ Knowledge Base updated successfully!');
+                }
+            } catch (err) {
+                alert('❌ Error updating knowledge base.');
+            }
+        }
+
+        // Sidebar Navigation Switcher
+        function showSection(section) {
+            document.getElementById('section-reservations').classList.add('hidden');
+            document.getElementById('section-knowledge').classList.add('hidden');
+
+            document.getElementById('nav-reservations').classList.remove('active');
+            document.getElementById('nav-knowledge').classList.remove('active');
+
+            if (section === 'reservations') {
+                document.getElementById('section-reservations').classList.remove('hidden');
+                document.getElementById('nav-reservations').classList.add('active');
+                document.getElementById('page-heading').innerText = 'Live Reservations';
+            } else {
+                document.getElementById('section-knowledge').classList.remove('hidden');
+                document.getElementById('nav-knowledge').classList.add('active');
+                document.getElementById('page-heading').innerText = 'Knowledge Base Management';
+            }
+        }
+
+        // Initial Load
+        loadData();
+        loadKnowledgeBase();
+    </script>
+</body>
+</html>
