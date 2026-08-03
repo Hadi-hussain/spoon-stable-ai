@@ -33,7 +33,6 @@
             font-family: var(--font-body);
         }
 
-        /* Hero Text Background Placeholder */
         .hero {
             display: flex;
             flex-direction: column;
@@ -60,7 +59,6 @@
                 font-size: 14px;
             }
 
-        /* Floating Trigger Button */
         .chat-widget-btn {
             position: fixed;
             bottom: 28px;
@@ -85,7 +83,6 @@
                 background: var(--accent-gold-hover);
             }
 
-        /* Floating Chat Window */
         .chat-widget-popup {
             position: fixed;
             bottom: 100px;
@@ -249,12 +246,10 @@
         <p>Minneapolis, Minnesota &bull; Chef Gavin Kaysen</p>
     </div>
 
-    <!-- Floating Widget Trigger Button -->
     <button class="chat-widget-btn" onclick="toggleWidget()">
         <i data-lucide="message-square" style="width: 26px; height: 26px;"></i>
     </button>
 
-    <!-- Floating Chat Window -->
     <div class="chat-widget-popup" id="chat-popup">
         <div class="widget-header">
             <h3>Concierge</h3>
@@ -278,6 +273,9 @@
     <script>
         lucide.createIcons();
 
+        // Active multi-turn conversation memory store
+        let chatHistory = [];
+
         function toggleWidget() {
             const popup = document.getElementById('chat-popup');
             popup.classList.toggle('active');
@@ -293,6 +291,8 @@
             if (!text) return;
 
             appendMsg('user', text);
+            chatHistory.push({ role: 'user', content: text });
+
             input.value = '';
             input.disabled = true;
             btn.disabled = true;
@@ -301,13 +301,17 @@
                 const res = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
+                    body: JSON.stringify({
+                        message: text,
+                        history: chatHistory
+                    })
                 });
 
                 const data = await res.json();
 
                 if (data.response) {
                     appendMsg('bot', data.response);
+                    chatHistory.push({ role: 'assistant', content: data.response });
                 } else {
                     appendMsg('bot', '⚠️ Error generating response. Please try again.');
                 }

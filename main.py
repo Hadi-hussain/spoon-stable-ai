@@ -1,7 +1,7 @@
 ﻿import os
 import sqlite3
 import json
-from typing import List, Dict, Any
+from typing import List
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -128,7 +128,6 @@ def save_reservation(name: str, phone: str, date: str, time: str, guests: int):
     conn.close()
     return res_id
 
-# Updated Data Models for Conversation History
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -176,15 +175,15 @@ def chat(req: ChatRequest):
             "type": "function",
             "function": {
                 "name": "book_reservation",
-                "description": "Book a reservation ONLY when the guest explicitly provided ALL 5 items: Name, Phone, Date, Time, and Guest Count. DO NOT guess missing fields.",
+                "description": "Call this function ONCE you have gathered all 5 required parameters across the conversation: Name, Phone, Date, Time, and Guest Count.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Full name"},
-                        "phone": {"type": "string", "description": "Phone number provided by user"},
-                        "date": {"type": "string", "description": "Date requested"},
-                        "time": {"type": "string", "description": "Time requested"},
-                        "guests": {"type": "integer", "description": "Party size"}
+                        "name": {"type": "string", "description": "Full name of the guest"},
+                        "phone": {"type": "string", "description": "Phone number"},
+                        "date": {"type": "string", "description": "Reservation date"},
+                        "time": {"type": "string", "description": "Reservation time"},
+                        "guests": {"type": "integer", "description": "Number of guests"}
                     },
                     "required": ["name", "phone", "date", "time", "guests"]
                 }
@@ -201,22 +200,20 @@ Knowledge Base:
 
 CRITICAL RULES:
 - Keep answers concise (2 to 3 sentences maximum).
-- Give accurate prices and dish descriptions directly from the Knowledge Base when asked.
-- You have access to conversation history. Remember what the user said earlier in the conversation.
-- NEVER call `book_reservation` or say a reservation is confirmed unless the user explicitly gave you ALL 5 pieces of information: Name, Phone Number, Date, Time, and Party Size.
-- If ANY detail is missing (e.g. phone number), kindly ask the user to provide the missing item before confirming.
+- Look at the WHOLE conversation history to keep track of details the user already gave you (e.g. Name, Phone, Date, Time, Guests).
+- Once all 5 details (Name, Phone, Date, Time, Guests) are present across past and present messages, call `book_reservation`.
+- If any of the 5 details are still missing, ask ONLY for the missing items. Do not ask for items the user already provided.
 - Note policy: The Parlour Bar does NOT accept reservations (walk-ins only).
     """
 
-    # Build full message history list for Groq
     messages_payload = [{"role": "system", "content": system_prompt}]
     
-    # Append existing history
+    # Process history payload
     for msg in req.history:
         if msg.role in ["user", "assistant"]:
             messages_payload.append({"role": msg.role, "content": msg.content})
             
-    # Append current user message if provided separately
+    # Append current message if not already trailing in history
     if req.message and (not req.history or req.history[-1].content != req.message):
         messages_payload.append({"role": "user", "content": req.message})
 
@@ -226,7 +223,7 @@ CRITICAL RULES:
             messages=messages_payload,
             tools=tools,
             tool_choice="auto",
-            temperature=0.3,
+            temperature=0.2,
             max_tokens=300
         )
 
@@ -237,9 +234,6 @@ CRITICAL RULES:
                 if tool_call.function.name == "book_reservation":
                     try:
                         args = json.loads(tool_call.function.arguments)
-                        if not args.get("phone") or args.get("phone") in ["unknown", "none", "n/a"]:
-                            return {"response": f"I would be delighted to reserve a table for {args.get('name', 'you')}, but could you please provide your phone number to complete the booking?"}
-                        
                         res_id = save_reservation(
                             name=args["name"],
                             phone=str(args["phone"]),
