@@ -1,5 +1,6 @@
 ﻿import os
 import sqlite3
+import json
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -94,7 +95,6 @@ Drinks:
 - Private Dining: Private dining room accommodates up to 25 guests. Contact events@spoonandstable.com for bookings.
     """.strip()
     
-    # Update existing KB or insert default if empty
     cursor.execute('''
         INSERT INTO config (key, value) VALUES ('knowledge_base', ?)
         ON CONFLICT(key) DO UPDATE SET value=excluded.value
@@ -111,31 +111,82 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+# Helper to save reservation
+def save_reservation(name: str, phone: str, date: str, time: str, guests: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO reservations (name, phone, date, time, guests) VALUES (?, ?, ?, ?, ?)",
+        (name, phone, date, time, guests)
+    )
+    conn.commit()
+    res_id = cursor.lastrowid
+    conn.close()
+    return res_id
+
 # --- Data Models ---
 class ChatRequest(BaseModel):
     message: str
+
+class ReservationRequest(BaseModel):
+    name: str
+    phone: str
+    date: str
+    time: str
+    guests: int
 
 class UpdateMenuRequest(BaseModel):
     new_text: str
 
 # --- Endpoints ---
 
-@app.get("/")
+# 1. Main Root URL -> Serves the Chat Web Interface
+@app.get("/", response_class=HTMLResponse)
 def home():
-    return {"status": "Spoon & Stable AI Concierge API is active"}
+    index_path = os.path.join(os.path.dirname(__file__), "index.html")
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>index.html not found in root directory</h1>"
 
-# 1. Chat Endpoint
+# 2. Manual Reservation Endpoint
+@app.post("/reserve")
+def make_reservation(req: ReservationRequest):
+    res_id = save_reservation(req.name, req.phone, req.date, req.time, req.guests)
+    return {"status": "success", "reservation_id": res_id}
+
+# 3. Chat Endpoint (AI Concierge with Function Calling)
 @app.post("/chat")
 def chat(req: ChatRequest):
     if not client:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY environment variable is missing.")
 
-    # Fetch dynamic Knowledge Base from DB
     conn = get_db()
     kb_row = conn.execute("SELECT value FROM config WHERE key = 'knowledge_base'").fetchone()
     conn.close()
     
     kb_content = kb_row["value"] if kb_row else "Spoon & Stable Fine Dining Restaurant"
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "book_reservation",
+                "description": "Book a reservation at Spoon & Stable when all required guest details are provided.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Full name of the guest"},
+                        "phone": {"type": "string", "description": "Phone number"},
+                        "date": {"type": "string", "description": "Reservation date"},
+                        "time": {"type": "string", "description": "Reservation time"},
+                        "guests": {"type": "integer", "description": "Number of guests"}
+                    },
+                    "required": ["name", "phone", "date", "time", "guests"]
+                }
+            }
+        }
+    ]
 
     system_prompt = f"""
 You are the elite AI Concierge for 'Spoon & Stable', a high-end French-inspired Midwestern fine dining restaurant.
@@ -144,13 +195,14 @@ Your tone is exceptionally warm, professional, sophisticated, and attentive.
 Use the following detailed Knowledge Base to answer guest queries accurately:
 {kb_content}
 
-If the user expresses intent to reserve a table, kindly assist them by gathering the required details:
+If the user wants to make a reservation, collect their:
 1. Full Name
 2. Phone Number
 3. Date
-4. Desired Time
-5. Party Size / Number of Guests
+4. Time
+5. Number of Guests
 
+When the guest provides ALL 5 required details, call the `book_reservation` function immediately to store their booking in the system.
 Be helpful, elegant, accurate, and concise in your replies.
     """
 
@@ -161,15 +213,35 @@ Be helpful, elegant, accurate, and concise in your replies.
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": req.message}
             ],
-            temperature=0.7,
-            max_tokens=350
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.7
         )
-        bot_response = completion.choices[0].message.content
-        return {"response": bot_response}
+
+        message = completion.choices[0].message
+
+        # Handle Function Call if AI decides to book table
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                if tool_call.function.name == "book_reservation":
+                    args = json.loads(tool_call.function.arguments)
+                    res_id = save_reservation(
+                        name=args["name"],
+                        phone=args["phone"],
+                        date=args["date"],
+                        time=args["time"],
+                        guests=int(args["guests"])
+                    )
+                    return {
+                        "response": f"Thank you, {args['name']}! Your reservation for {args['guests']} guest(s) on {args['date']} at {args['time']} has been confirmed. (Confirmation ID: #{res_id})"
+                    }
+
+        return {"response": message.content}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 2. Admin Dashboard View
+# 4. Admin Dashboard View
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard():
     dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
@@ -178,7 +250,7 @@ def admin_dashboard():
             return f.read()
     return "<h1>dashboard.html not found in root directory</h1>"
 
-# 3. Admin: Get Reservations
+# 5. Admin: Get Reservations
 @app.get("/admin/reservations")
 def get_reservations():
     conn = get_db()
@@ -191,7 +263,7 @@ def get_reservations():
         "reservations": reservations
     }
 
-# 4. Admin: Get Knowledge Base Configuration
+# 6. Admin: Get Knowledge Base Configuration
 @app.get("/admin/get-config")
 def get_config():
     conn = get_db()
@@ -199,7 +271,7 @@ def get_config():
     conn.close()
     return {"knowledge_base": row["value"] if row else ""}
 
-# 5. Admin: Update Knowledge Base Configuration
+# 7. Admin: Update Knowledge Base Configuration
 @app.post("/admin/update-menu")
 def update_menu(req: UpdateMenuRequest):
     conn = get_db()
