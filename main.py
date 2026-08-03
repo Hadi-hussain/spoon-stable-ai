@@ -1,7 +1,7 @@
 ﻿import os
 import sqlite3
 import json
-from typing import List
+from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -175,15 +175,15 @@ def chat(req: ChatRequest):
             "type": "function",
             "function": {
                 "name": "book_reservation",
-                "description": "Call this function ONCE you have gathered all 5 required parameters across the conversation: Name, Phone, Date, Time, and Guest Count.",
+                "description": "Book a table ONLY when the user explicitly provides ALL 5 details: Name, Phone, Date, Time, and Guest count. Never invent missing details.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Full name of the guest"},
+                        "name": {"type": "string", "description": "Full name"},
                         "phone": {"type": "string", "description": "Phone number"},
-                        "date": {"type": "string", "description": "Reservation date"},
-                        "time": {"type": "string", "description": "Reservation time"},
-                        "guests": {"type": "integer", "description": "Number of guests"}
+                        "date": {"type": "string", "description": "Date requested"},
+                        "time": {"type": "string", "description": "Time requested"},
+                        "guests": {"type": "integer", "description": "Party size"}
                     },
                     "required": ["name", "phone", "date", "time", "guests"]
                 }
@@ -200,20 +200,21 @@ Knowledge Base:
 
 CRITICAL RULES:
 - Keep answers concise (2 to 3 sentences maximum).
-- Look at the WHOLE conversation history to keep track of details the user already gave you (e.g. Name, Phone, Date, Time, Guests).
-- Once all 5 details (Name, Phone, Date, Time, Guests) are present across past and present messages, call `book_reservation`.
-- If any of the 5 details are still missing, ask ONLY for the missing items. Do not ask for items the user already provided.
-- Note policy: The Parlour Bar does NOT accept reservations (walk-ins only).
+- Give accurate prices and dish descriptions directly from the Knowledge Base when asked.
+- Evaluate the WHOLE conversation history to keep track of details the user already gave you (Name, Phone, Date, Time, Guests).
+- Once all 5 details (Name, Phone, Date, Time, Guests) are present in the conversation, trigger `book_reservation`.
+- If details are missing when a user asks to reserve, politely ask ONLY for the missing items.
+- Parlour Bar policy: Walk-ins only (No reservations).
     """
 
     messages_payload = [{"role": "system", "content": system_prompt}]
     
-    # Process history payload
-    for msg in req.history:
-        if msg.role in ["user", "assistant"]:
-            messages_payload.append({"role": msg.role, "content": msg.content})
+    # Safely load valid user and assistant history turns
+    for item in req.history:
+        if item.role in ["user", "assistant"] and item.content.strip():
+            messages_payload.append({"role": item.role, "content": item.content})
             
-    # Append current message if not already trailing in history
+    # Fallback to single message string if history array is empty
     if req.message and (not req.history or req.history[-1].content != req.message):
         messages_payload.append({"role": "user", "content": req.message})
 
@@ -223,7 +224,7 @@ CRITICAL RULES:
             messages=messages_payload,
             tools=tools,
             tool_choice="auto",
-            temperature=0.2,
+            temperature=0.3,
             max_tokens=300
         )
 
@@ -250,7 +251,8 @@ CRITICAL RULES:
         return {"response": message.content if message.content else "How may I assist you with Spoon & Stable today?"}
 
     except Exception as e:
-        return {"response": "I apologize, but I couldn't process that request right now. How else may I assist you with your dining plans?"}
+        print(f"API Error: {str(e)}")
+        return {"response": "How else may I assist you with our menu, hours, or dining experience today?"}
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard():

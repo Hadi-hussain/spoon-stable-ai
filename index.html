@@ -33,6 +33,7 @@
             font-family: var(--font-body);
         }
 
+        /* Hero Text Background */
         .hero {
             display: flex;
             flex-direction: column;
@@ -59,6 +60,7 @@
                 font-size: 14px;
             }
 
+        /* Floating Trigger Button */
         .chat-widget-btn {
             position: fixed;
             bottom: 28px;
@@ -83,6 +85,7 @@
                 background: var(--accent-gold-hover);
             }
 
+        /* Floating Chat Window */
         .chat-widget-popup {
             position: fixed;
             bottom: 100px;
@@ -246,10 +249,12 @@
         <p>Minneapolis, Minnesota &bull; Chef Gavin Kaysen</p>
     </div>
 
+    <!-- Floating Trigger Button -->
     <button class="chat-widget-btn" onclick="toggleWidget()">
         <i data-lucide="message-square" style="width: 26px; height: 26px;"></i>
     </button>
 
+    <!-- Floating Chat Window -->
     <div class="chat-widget-popup" id="chat-popup">
         <div class="widget-header">
             <h3>Concierge</h3>
@@ -273,7 +278,7 @@
     <script>
         lucide.createIcons();
 
-        // Active multi-turn conversation memory store
+        // Multi-turn context storage
         let chatHistory = [];
 
         function toggleWidget() {
@@ -290,6 +295,7 @@
             const text = input.value.trim();
             if (!text) return;
 
+            // Render message and add to history payload
             appendMsg('user', text);
             chatHistory.push({ role: 'user', content: text });
 
@@ -309,11 +315,11 @@
 
                 const data = await res.json();
 
-                if (data.response) {
+                if (data && data.response) {
                     appendMsg('bot', data.response);
                     chatHistory.push({ role: 'assistant', content: data.response });
                 } else {
-                    appendMsg('bot', '⚠️ Error generating response. Please try again.');
+                    appendMsg('bot', 'How else may I assist you with Spoon & Stable today?');
                 }
             } catch (e) {
                 appendMsg('bot', '⚠️ Connection error. Please ensure the server is active.');
