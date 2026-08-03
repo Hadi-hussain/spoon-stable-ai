@@ -155,7 +155,7 @@ def make_reservation(req: ReservationRequest):
     res_id = save_reservation(req.name, req.phone, req.date, req.time, req.guests)
     return {"status": "success", "reservation_id": res_id}
 
-# 3. Chat Endpoint (AI Concierge with Function Calling)
+# 3. Chat Endpoint (Concise AI Concierge with Function Calling)
 @app.post("/chat")
 def chat(req: ChatRequest):
     if not client:
@@ -190,20 +190,16 @@ def chat(req: ChatRequest):
 
     system_prompt = f"""
 You are the elite AI Concierge for 'Spoon & Stable', a high-end French-inspired Midwestern fine dining restaurant.
-Your tone is exceptionally warm, professional, sophisticated, and attentive.
+Your tone is warm, professional, sophisticated, and concise.
 
-Use the following detailed Knowledge Base to answer guest queries accurately:
+Use the following detailed Knowledge Base to answer guest queries:
 {kb_content}
 
-If the user wants to make a reservation, collect their:
-1. Full Name
-2. Phone Number
-3. Date
-4. Time
-5. Number of Guests
-
-When the guest provides ALL 5 required details, call the `book_reservation` function immediately to store their booking in the system.
-Be helpful, elegant, accurate, and concise in your replies.
+CRITICAL FORMATTING INSTRUCTIONS:
+- ALWAYS keep responses extremely brief (STRICTLY 2 TO 3 SHORT LINES MAXIMUM).
+- Do not add unnecessary fluff or lengthy greetings.
+- If the user wants to make a reservation, request their Name, Phone, Date, Time, and Guest count in one clear, short sentence.
+- When the guest provides ALL 5 required details, call `book_reservation` immediately.
     """
 
     try:
@@ -215,7 +211,8 @@ Be helpful, elegant, accurate, and concise in your replies.
             ],
             tools=tools,
             tool_choice="auto",
-            temperature=0.7
+            temperature=0.5,
+            max_tokens=100
         )
 
         message = completion.choices[0].message
@@ -233,7 +230,7 @@ Be helpful, elegant, accurate, and concise in your replies.
                         guests=int(args["guests"])
                     )
                     return {
-                        "response": f"Thank you, {args['name']}! Your reservation for {args['guests']} guest(s) on {args['date']} at {args['time']} has been confirmed. (Confirmation ID: #{res_id})"
+                        "response": f"Thank you, {args['name']}! Your reservation for {args['guests']} guest(s) on {args['date']} at {args['time']} is confirmed. (ID: #{res_id})"
                     }
 
         return {"response": message.content}
