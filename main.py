@@ -10,7 +10,6 @@ from groq import Groq
 
 app = FastAPI(title="Spoon & Stable Concierge API")
 
-# Enable CORS for frontend widgets
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,18 +18,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Groq Client
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-# Database Path Configuration (Vercel serverless fix)
 DB_PATH = "/tmp/restaurant.db" if os.environ.get("VERCEL") else "restaurant.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Table for reservations
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reservations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +39,6 @@ def init_db():
         )
     ''')
     
-    # Table for knowledge base configuration
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,7 +47,6 @@ def init_db():
         )
     ''')
     
-    # Official & Comprehensive Knowledge Base for Spoon & Stable
     default_kb = """
 === RESTAURANT OVERVIEW ===
 Name: Spoon and Stable
@@ -181,7 +175,7 @@ def chat(req: ChatRequest):
             "type": "function",
             "function": {
                 "name": "book_reservation",
-                "description": "Call this ONLY when ALL 5 reservation details are clearly provided across conversation history: Name, Phone, Date, Time, and Guest count.",
+                "description": "Call this ONLY when ALL 5 reservation details (Name, Phone, Date, Time, Guests) are explicitly provided by the user.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -198,18 +192,18 @@ def chat(req: ChatRequest):
     ]
 
     system_prompt = f"""
-You are the elite AI Concierge for 'Spoon & Stable'.
-Your tone is warm, polite, professional, and concise.
+You are the elite AI Concierge for 'Spoon & Stable'. 
+Your goal is to assist guests with ANY questions about the restaurant using the Knowledge Base below.
 
 Knowledge Base:
 {kb_content}
 
-CRITICAL RULES:
-- Keep answers concise (2 to 3 sentences maximum).
-- Look at the conversation history to track details provided so far.
-- IF the guest asks for a reservation/booking but hasn't given all 5 details (Name, Phone, Date, Time, Guests), ask ONLY for the missing items in text. DO NOT call `book_reservation`.
-- ONLY call `book_reservation` when ALL 5 details are explicitly present in the history.
-- Parlour Bar policy: Walk-ins only (No reservations).
+RULES:
+- Answer the user's specific question directly, accurately, and politely (2-3 sentences max).
+- If asked about dress code, parking, hours, menu items, prices, chef info, or policies, answer that query directly from the Knowledge Base.
+- DO NOT bring up reservations or ask for booking details UNLESS the user explicitly asks to book a table or make a reservation.
+- IF the user explicitly asks to make a reservation, collect their Name, Phone Number, Date, Time, and Guest Count.
+- ONLY call `book_reservation` when all 5 pieces of information are present.
     """
 
     messages_payload = [{"role": "system", "content": system_prompt}]
@@ -226,40 +220,44 @@ CRITICAL RULES:
             model="llama-3.3-70b-versatile",
             messages=messages_payload,
             tools=tools,
-            tool_choice="auto",
             temperature=0.3,
             max_tokens=300
         )
 
         message = completion.choices[0].message
 
+        # If model decides to call tool
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 if tool_call.function.name == "book_reservation":
-                    args = json.loads(tool_call.function.arguments)
-                    name = args.get("name", "Guest")
-                    phone = str(args.get("phone", ""))
-                    date = args.get("date", "")
-                    time = args.get("time", "")
-                    raw_guests = args.get("guests", 1)
                     try:
-                        guests = int(raw_guests)
-                    except (ValueError, TypeError):
-                        guests = 1
+                        args = json.loads(tool_call.function.arguments)
+                        name = args.get("name", "Guest")
+                        phone = str(args.get("phone", ""))
+                        date = args.get("date", "")
+                        time = args.get("time", "")
+                        raw_guests = args.get("guests", 1)
+                        try:
+                            guests = int(raw_guests)
+                        except (ValueError, TypeError):
+                            guests = 1
 
-                    res_id = save_reservation(name=name, phone=phone, date=date, time=time, guests=guests)
-                    return {
-                        "response": f"Thank you, {name}! Your reservation for {guests} guest(s) on {date} at {time} is confirmed. (ID: #{res_id})"
-                    }
+                        res_id = save_reservation(name=name, phone=phone, date=date, time=time, guests=guests)
+                        return {
+                            "response": f"Thank you, {name}! Your reservation for {guests} guest(s) on {date} at {time} is confirmed. (ID: #{res_id})"
+                        }
+                    except Exception as err:
+                        print(f"Tool execution error: {err}")
 
+        # Standard Text Response
         if message.content:
             return {"response": message.content}
 
-        return {"response": "I would be happy to assist with your reservation! Could you please share your Name, Phone Number, Date, Time, and Party Size?"}
+        return {"response": "How may I assist you with Spoon & Stable today?"}
 
     except Exception as e:
-        print(f"API Error: {e}")
-        return {"response": "I would be happy to help with a reservation! Please share your name, phone number, preferred date, time, and party size."}
+        print(f"Chat error: {e}")
+        return {"response": "I am here to help with any questions regarding our menu, dress code, parking, or hours."}
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard():
