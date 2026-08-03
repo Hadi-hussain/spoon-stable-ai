@@ -9,6 +9,7 @@ from groq import Groq
 
 app = FastAPI(title="Spoon & Stable Concierge API")
 
+# Enable CORS for frontend widgets
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,15 +18,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize Groq Client
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
+# Database Path Configuration (Vercel serverless fix)
 DB_PATH = "/tmp/restaurant.db" if os.environ.get("VERCEL") else "restaurant.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
+    # Table for reservations
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reservations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,6 +42,7 @@ def init_db():
         )
     ''')
     
+    # Table for knowledge base configuration
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,47 +51,59 @@ def init_db():
         )
     ''')
     
+    # Official & Comprehensive Knowledge Base for Spoon & Stable
     default_kb = """
 === RESTAURANT OVERVIEW ===
-Name: Spoon & Stable
-Cuisine: French-Inspired Midwestern Fine Dining (Helmed by James Beard Award-winning Chef Gavin Kaysen)
+Name: Spoon and Stable
+Concept: French-inspired Midwestern cuisine set in a restored 1906 horse stable.
+Owner & Executive Chef: Chef Gavin Kaysen (James Beard Award Winner)
 Address: 211 N 1st St, Minneapolis, MN 55401 (North Loop Neighborhood)
 Phone: (612) 224-9850
+Email: info@spoonandstable.com
+Website: https://www.spoonandstable.com
 
 === HOURS OF OPERATION ===
-Dinner:
-- Sunday - Thursday: 5:00 PM – 10:00 PM
+Dining Room Dinner Hours:
+- Sunday – Thursday: 5:00 PM – 10:00 PM
 - Friday & Saturday: 5:00 PM – 11:00 PM
-The Parlour Bar: Open daily from 4:00 PM until late (Walk-ins welcome, NO reservations).
 
-=== MENU HIGHLIGHTS ===
+The Parlour Bar & Lounge:
+- Open daily starting at 4:00 PM until late.
+- Walk-ins only (No reservations accepted for the Parlour Bar).
+
+=== DINING MENU & PRICING ===
 Starters:
-- Bison Tartare (harissa, quails egg, gaufrette potatoes)
-- Seared Sea Scallops (cauliflower, golden raisin, caper butter)
-- Roasted Bone Marrow (parsley salad, grilled sourdough)
+- Bison Tartare ($24) - Harissa, quails egg, gaufrette potatoes
+- Seared Sea Scallops ($28) - Cauliflower, golden raisin, caper butter
+- Roasted Bone Marrow ($26) - Parsley salad, grilled sourdough
+- Chilled Oysters ($24/half-dozen) - Mignonette, lemon, cocktail sauce
 
-Handcrafted Pasta:
-- Ricotta Cavatelli (wild mushrooms, spinach, parmesan cream)
-- Garganelli (heritage pork ragù, fennel, pecorino)
+Handcrafted Pastas:
+- Ricotta Cavatelli ($32) - Wild mushrooms, spinach, parmesan cream
+- Garganelli ($34) - Heritage pork ragù, fennel, pecorino
+- Spaghetti ($36) - Sungold tomatoes, blue crab, chili, breadcrumbs
 
-Mains / Wood-Fired Specialties:
-- Heritage Pork Chop (sweet potato, braised greens, cider reduction)
-- Duck Breast (confit leg, roasted beets, cherry jus)
-- Dry-Aged Ribeye (truffle butter, potato puree, roasted roots)
+Entrees / Wood-Fired Specialties:
+- Heritage Pork Chop ($44) - Sweet potato, braised greens, cider reduction
+- Duck Breast ($48) - Confit leg, roasted beets, cherry jus
+- Dry-Aged Ribeye 14oz ($68) - Truffle butter, potato purée, roasted root vegetables
+- Roasted Halibut ($46) - Leek fondue, fingerling potatoes, saffron broth
 
 Desserts:
-- Honey Crisp Apple Tart (caramel, vanilla bean ice cream)
-- Dark Chocolate Ganache (hazelnut crunch, espresso cream)
+- Honey Crisp Apple Tart ($14) - Caramel, vanilla bean ice cream
+- Dark Chocolate Ganache ($15) - Hazelnut crunch, espresso cream
+- Artisanal Cheese Board ($22) - Honeycomb, seasonal fruit, crostini
 
-Drinks:
-- Full artisanal cocktail menu, extensive international wine list, local craft beers.
+Drinks & Beverage Program:
+- Full artisanal cocktail menu ($16 - $20), extensive international wine list by bottle and glass, local Minnesota craft beers.
 
 === POLICIES & AMENITIES ===
-- Dress Code: Smart Casual (no beachwear or tank tops).
-- Parking: Valet parking available at the main entrance ($15). Nearby street parking and ramps available.
-- Dietary Needs: Vegan, Vegetarian, Gluten-Free, and Nut-Free options available upon request.
-- Reservation Policy: Reservations open 30 days in advance at midnight. Cancellations must be made at least 24 hours prior to avoid a $25 per person cancellation fee.
-- Private Dining: Private dining room accommodates up to 25 guests. Contact events@spoonandstable.com for bookings.
+- Dress Code: Smart Casual (no beachwear or athletic tank tops).
+- Parking: Valet parking available at the main entrance ($15). Street parking and nearby public ramps available in the North Loop.
+- Dietary Needs: Vegan, Vegetarian, Gluten-Free, and Nut-Free options are accommodated upon request.
+- Reservation Policy: Reservations open 30 days in advance at midnight on OpenTable. Cancellations must be made at least 24 hours prior to avoid a $25 per person fee.
+- Private Events & Dining: Private dining room accommodates up to 25 guests. For event inquiries, contact events@spoonandstable.com.
+- Gift Cards: e-Gift cards and physical gift cards available online at spoonandstable.com or in person.
     """.strip()
     
     cursor.execute('''
@@ -183,6 +200,7 @@ Knowledge Base:
 
 CRITICAL RULES:
 - Keep answers concise (2 to 3 sentences maximum).
+- Give accurate prices and dish descriptions directly from the Knowledge Base when asked.
 - NEVER call `book_reservation` or say a reservation is confirmed unless the user explicitly gave you ALL 5 pieces of information: Name, Phone Number, Date, Time, and Party Size.
 - If ANY detail is missing (e.g. phone number), kindly ask the user to provide the missing item before confirming.
 - Note policy: The Parlour Bar does NOT accept reservations (walk-ins only).
@@ -208,7 +226,6 @@ CRITICAL RULES:
                 if tool_call.function.name == "book_reservation":
                     try:
                         args = json.loads(tool_call.function.arguments)
-                        # Check if any field is missing or generic
                         if not args.get("phone") or args.get("phone") in ["unknown", "none", "n/a"]:
                             return {"response": f"I would be delighted to reserve a table for {args.get('name', 'you')}, but could you please provide your phone number to complete the booking?"}
                         
