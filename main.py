@@ -50,18 +50,54 @@ def init_db():
         )
     ''')
     
-    # Default Knowledge Base Text if table is empty
+    # Complete detailed Knowledge Base for Spoon & Stable
     default_kb = """
-Restaurant Name: Spoon & Stable
-Cuisine: French-inspired American Fine Dining
-Hours: Mon-Sun 5:00 PM - 10:00 PM
-Dress Code: Smart Casual
-Cancellation Policy: Cancellations must be made at least 24 hours in advance.
-Specialties: Wood-fired meats, handcrafted pasta, artisanal cocktails.
+=== RESTAURANT OVERVIEW ===
+Name: Spoon & Stable
+Cuisine: French-Inspired Midwestern Fine Dining (Helmed by James Beard Award-winning Chef Gavin Kaysen)
+Address: 211 N 1st St, Minneapolis, MN 55401 (North Loop Neighborhood)
+Phone: (612) 224-9850
+
+=== HOURS OF OPERATION ===
+Dinner:
+- Sunday - Thursday: 5:00 PM – 10:00 PM
+- Friday & Saturday: 5:00 PM – 11:00 PM
+The Parlour Bar: Open daily from 4:00 PM until late (Walk-ins welcome).
+
+=== MENU HIGHLIGHTS ===
+Starters:
+- Bison Tartare (harissa, quails egg, gaufrette potatoes)
+- Seared Sea Scallops (cauliflower, golden raisin, caper butter)
+- Roasted Bone Marrow (parsley salad, grilled sourdough)
+
+Handcrafted Pasta:
+- Ricotta Cavatelli (wild mushrooms, spinach, parmesan cream)
+- Garganelli (heritage pork ragù, fennel, pecorino)
+
+Mains / Wood-Fired Specialties:
+- Heritage Pork Chop (sweet potato, braised greens, cider reduction)
+- Duck Breast (confit leg, roasted beets, cherry jus)
+- Dry-Aged Ribeye (truffle butter, potato puree, roasted roots)
+
+Desserts:
+- Honey Crisp Apple Tart (caramel, vanilla bean ice cream)
+- Dark Chocolate Ganache (hazelnut crunch, espresso cream)
+
+Drinks:
+- Full artisanal cocktail menu, extensive international wine list, local craft beers.
+
+=== POLICIES & AMENITIES ===
+- Dress Code: Smart Casual (no beachwear or tank tops).
+- Parking: Valet parking available at the main entrance ($15). Nearby street parking and ramps available.
+- Dietary Needs: Vegan, Vegetarian, Gluten-Free, and Nut-Free options available upon request.
+- Reservation Policy: Reservations open 30 days in advance at midnight. Cancellations must be made at least 24 hours prior to avoid a $25 per person cancellation fee.
+- Private Dining: Private dining room accommodates up to 25 guests. Contact events@spoonandstable.com for bookings.
     """.strip()
     
+    # Update existing KB or insert default if empty
     cursor.execute('''
-        INSERT OR IGNORE INTO config (key, value) VALUES ('knowledge_base', ?)
+        INSERT INTO config (key, value) VALUES ('knowledge_base', ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
     ''', (default_kb,))
     
     conn.commit()
@@ -102,20 +138,20 @@ def chat(req: ChatRequest):
     kb_content = kb_row["value"] if kb_row else "Spoon & Stable Fine Dining Restaurant"
 
     system_prompt = f"""
-You are the elite AI Concierge for 'Spoon & Stable', a high-end restaurant. 
+You are the elite AI Concierge for 'Spoon & Stable', a high-end French-inspired Midwestern fine dining restaurant.
 Your tone is exceptionally warm, professional, sophisticated, and attentive.
 
-Use the following Knowledge Base to answer guest queries:
+Use the following detailed Knowledge Base to answer guest queries accurately:
 {kb_content}
 
-If the user wants to make a reservation, collect their:
+If the user expresses intent to reserve a table, kindly assist them by gathering the required details:
 1. Full Name
 2. Phone Number
 3. Date
-4. Time
-5. Number of Guests
+4. Desired Time
+5. Party Size / Number of Guests
 
-Be helpful, elegant, and concise.
+Be helpful, elegant, accurate, and concise in your replies.
     """
 
     try:
@@ -126,7 +162,7 @@ Be helpful, elegant, and concise.
                 {"role": "user", "content": req.message}
             ],
             temperature=0.7,
-            max_tokens=300
+            max_tokens=350
         )
         bot_response = completion.choices[0].message.content
         return {"response": bot_response}
