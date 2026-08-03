@@ -1,6 +1,7 @@
 ﻿import os
 import sqlite3
 import json
+import re
 from typing import List
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -170,40 +171,22 @@ def chat(req: ChatRequest):
     
     kb_content = kb_row["value"] if kb_row else "Spoon & Stable Fine Dining Restaurant"
 
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "book_reservation",
-                "description": "Call this ONLY when ALL 5 reservation details (Name, Phone, Date, Time, Guests) are explicitly provided by the user.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Full name"},
-                        "phone": {"type": "string", "description": "Phone number"},
-                        "date": {"type": "string", "description": "Date"},
-                        "time": {"type": "string", "description": "Time"},
-                        "guests": {"type": "integer", "description": "Party size"}
-                    },
-                    "required": ["name", "phone", "date", "time", "guests"]
-                }
-            }
-        }
-    ]
-
     system_prompt = f"""
-You are the elite AI Concierge for 'Spoon & Stable'. 
-Your goal is to assist guests with ANY questions about the restaurant using the Knowledge Base below.
+You are the elite AI Concierge for 'Spoon & Stable'.
+Your tone is warm, polite, professional, and concise (2-3 sentences max).
 
 Knowledge Base:
 {kb_content}
 
-RULES:
-- Answer the user's specific question directly, accurately, and politely (2-3 sentences max).
-- If asked about dress code, parking, hours, menu items, prices, chef info, or policies, answer that query directly from the Knowledge Base.
-- DO NOT bring up reservations or ask for booking details UNLESS the user explicitly asks to book a table or make a reservation.
-- IF the user explicitly asks to make a reservation, collect their Name, Phone Number, Date, Time, and Guest Count.
-- ONLY call `book_reservation` when all 5 pieces of information are present.
+RULES FOR GENERAL QUESTIONS:
+- Answer questions directly from the Knowledge Base (e.g., dress code, parking, prices, menu items, hours, chef details).
+- DO NOT bring up booking or ask for reservation details unless the user specifically asks to reserve a table.
+
+RULES FOR RESERVATIONS:
+- Track reservation details across the conversation (Name, Phone, Date, Time, Guests).
+- If details are missing, kindly ask ONLY for the missing items in regular text.
+- IF AND ONLY IF all 5 details (Name, Phone, Date, Time, Guests) are explicitly provided in the conversation history, output ONLY a JSON object in this exact format (nothing else):
+{{"BOOKING_COMPLETE": true, "name": "Guest Name", "phone": "1234567890", "date": "Date", "time": "Time", "guests": 2}}
     """
 
     messages_payload = [{"role": "system", "content": system_prompt}]
@@ -219,45 +202,37 @@ RULES:
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages_payload,
-            tools=tools,
-            temperature=0.3,
+            temperature=0.2,
             max_tokens=300
         )
 
-        message = completion.choices[0].message
+        reply = completion.choices[0].message.content.strip()
 
-        # If model decides to call tool
-        if message.tool_calls:
-            for tool_call in message.tool_calls:
-                if tool_call.function.name == "book_reservation":
-                    try:
-                        args = json.loads(tool_call.function.arguments)
-                        name = args.get("name", "Guest")
-                        phone = str(args.get("phone", ""))
-                        date = args.get("date", "")
-                        time = args.get("time", "")
-                        raw_guests = args.get("guests", 1)
-                        try:
-                            guests = int(raw_guests)
-                        except (ValueError, TypeError):
-                            guests = 1
+        # Check if model outputted a booking payload
+        if "BOOKING_COMPLETE" in reply:
+            try:
+                # Extract JSON string if embedded
+                json_match = re.search(r'\{.*\}', reply, re.DOTALL)
+                if json_match:
+                    data = json.loads(json_match.group())
+                    res_id = save_reservation(
+                        name=data.get("name", "Guest"),
+                        phone=str(data.get("phone", "")),
+                        date=data.get("date", ""),
+                        time=data.get("time", ""),
+                        guests=int(data.get("guests", 1))
+                    )
+                    return {
+                        "response": f"Thank you, {data.get('name')}! Your reservation for {data.get('guests')} guest(s) on {data.get('date')} at {data.get('time')} is confirmed. (ID: #{res_id})"
+                    }
+            except Exception as parse_err:
+                print(f"JSON Parse Error: {parse_err}")
 
-                        res_id = save_reservation(name=name, phone=phone, date=date, time=time, guests=guests)
-                        return {
-                            "response": f"Thank you, {name}! Your reservation for {guests} guest(s) on {date} at {time} is confirmed. (ID: #{res_id})"
-                        }
-                    except Exception as err:
-                        print(f"Tool execution error: {err}")
-
-        # Standard Text Response
-        if message.content:
-            return {"response": message.content}
-
-        return {"response": "How may I assist you with Spoon & Stable today?"}
+        return {"response": reply}
 
     except Exception as e:
-        print(f"Chat error: {e}")
-        return {"response": "I am here to help with any questions regarding our menu, dress code, parking, or hours."}
+        print(f"Server Error Log: {e}")
+        return {"response": "Welcome to Spoon & Stable! How may I assist you with our menu, hours, dress code, or reservations today?"}
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard():
