@@ -1,7 +1,7 @@
 ﻿import os
 import sqlite3
 import json
-from typing import List, Dict, Any
+from typing import List
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -175,14 +175,14 @@ def chat(req: ChatRequest):
             "type": "function",
             "function": {
                 "name": "book_reservation",
-                "description": "Book a table ONLY when the user explicitly provides ALL 5 details: Name, Phone, Date, Time, and Guest count. Never invent missing details.",
+                "description": "Call this ONLY when ALL 5 items have been clearly provided by the user in history: Name, Phone, Date, Time, and Guest Count. DO NOT call if any detail is missing.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Full name"},
+                        "name": {"type": "string", "description": "Guest full name"},
                         "phone": {"type": "string", "description": "Phone number"},
-                        "date": {"type": "string", "description": "Date requested"},
-                        "time": {"type": "string", "description": "Time requested"},
+                        "date": {"type": "string", "description": "Date"},
+                        "time": {"type": "string", "description": "Time"},
                         "guests": {"type": "integer", "description": "Party size"}
                     },
                     "required": ["name", "phone", "date", "time", "guests"]
@@ -192,7 +192,7 @@ def chat(req: ChatRequest):
     ]
 
     system_prompt = f"""
-You are the elite AI Concierge for 'Spoon & Stable'. 
+You are the elite AI Concierge for 'Spoon & Stable'.
 Your tone is warm, professional, sophisticated, and concise.
 
 Knowledge Base:
@@ -200,21 +200,17 @@ Knowledge Base:
 
 CRITICAL RULES:
 - Keep answers concise (2 to 3 sentences maximum).
-- Give accurate prices and dish descriptions directly from the Knowledge Base when asked.
-- Evaluate the WHOLE conversation history to keep track of details the user already gave you (Name, Phone, Date, Time, Guests).
-- Once all 5 details (Name, Phone, Date, Time, Guests) are present in the conversation, trigger `book_reservation`.
-- If details are missing when a user asks to reserve, politely ask ONLY for the missing items.
-- Parlour Bar policy: Walk-ins only (No reservations).
+- Check the conversation history to track details already provided (Name, Phone, Date, Time, Guests).
+- IF the user wants to make a booking/reservation but hasn't provided all 5 details yet, DO NOT call any tool. Simply respond in natural text asking for the missing details (Name, Phone, Date, Time, Party size).
+- ONLY call `book_reservation` when ALL 5 details (Name, Phone, Date, Time, Guests) are explicitly present in the history.
     """
 
     messages_payload = [{"role": "system", "content": system_prompt}]
     
-    # Safely load valid user and assistant history turns
     for item in req.history:
         if item.role in ["user", "assistant"] and item.content.strip():
             messages_payload.append({"role": item.role, "content": item.content})
             
-    # Fallback to single message string if history array is empty
     if req.message and (not req.history or req.history[-1].content != req.message):
         messages_payload.append({"role": "user", "content": req.message})
 
@@ -230,6 +226,7 @@ CRITICAL RULES:
 
         message = completion.choices[0].message
 
+        # Handle tool call
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 if tool_call.function.name == "book_reservation":
@@ -245,14 +242,18 @@ CRITICAL RULES:
                         return {
                             "response": f"Thank you, {args['name']}! Your reservation for {args['guests']} guest(s) on {args['date']} at {args['time']} is confirmed. (ID: #{res_id})"
                         }
-                    except Exception:
-                        return {"response": "To finalize your booking, please confirm your Name, Phone Number, Date, Time, and Party Size."}
+                    except Exception as err:
+                        print(f"Tool Exec Error: {err}")
 
-        return {"response": message.content if message.content else "How may I assist you with Spoon & Stable today?"}
+        # Normal text response
+        if message.content:
+            return {"response": message.content}
+            
+        return {"response": "I would be happy to assist with your reservation! Could you please share your Name, Phone Number, Date, Time, and Party Size?"}
 
     except Exception as e:
-        print(f"API Error: {str(e)}")
-        return {"response": "How else may I assist you with our menu, hours, or dining experience today?"}
+        print(f"Groq API Error: {e}")
+        return {"response": "I would be happy to help with a reservation! Please provide your name, phone number, preferred date, time, and party size."}
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard():
