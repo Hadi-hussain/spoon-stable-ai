@@ -155,7 +155,7 @@ def make_reservation(req: ReservationRequest):
     res_id = save_reservation(req.name, req.phone, req.date, req.time, req.guests)
     return {"status": "success", "reservation_id": res_id}
 
-# 3. Chat Endpoint (Strict Concierge Behavior)
+# 3. Chat Endpoint (Concierge with Function Calling)
 @app.post("/chat")
 def chat(req: ChatRequest):
     if not client:
@@ -192,14 +192,14 @@ def chat(req: ChatRequest):
 You are the elite AI Concierge for 'Spoon & Stable'. 
 Your tone is warm, professional, sophisticated, and concise.
 
-Use the following detailed Knowledge Base to answer guest queries:
+Use the following detailed Knowledge Base to answer guest queries accurately:
 {kb_content}
 
 RULES:
-- KEEP RESPONSES VERY BRIEF (2 TO 3 LINES MAXIMUM).
-- DO NOT mention reservations or ask for booking details UNLESS the user explicitly asks to make a reservation or book a table.
-- If the user asks about menu items, hours, dress code, or general questions, simply answer their question directly.
-- Only if the user says they want to book/reserve a table, ask them for: Name, Phone, Date, Time, and Number of Guests.
+- Keep responses concise (around 2 to 3 sentences maximum).
+- If the user asks about dietary accommodations or menu details, check the knowledge base and answer accurately. Do not guarantee unlisted options (e.g., halal certification).
+- DO NOT mention reservations or ask for booking details UNLESS the user explicitly asks to book a table.
+- When the guest explicitly wants to book and provides ALL 5 required details, trigger `book_reservation`.
     """
 
     try:
@@ -212,7 +212,7 @@ RULES:
             tools=tools,
             tool_choice="auto",
             temperature=0.4,
-            max_tokens=120
+            max_tokens=250
         )
 
         message = completion.choices[0].message
@@ -233,7 +233,7 @@ RULES:
                         "response": f"Thank you, {args['name']}! Your reservation for {args['guests']} guest(s) on {args['date']} at {args['time']} is confirmed. (ID: #{res_id})"
                     }
 
-        return {"response": message.content}
+        return {"response": message.content if message.content else "How else may I assist you today?"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
