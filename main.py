@@ -10,6 +10,7 @@ from groq import Groq
 
 app = FastAPI(title="Spoon & Stable Concierge API")
 
+# Enable CORS for frontend widgets
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,15 +19,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize Groq Client
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
+# Database Path Configuration (Vercel serverless fix)
 DB_PATH = "/tmp/restaurant.db" if os.environ.get("VERCEL") else "restaurant.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
+    # Table for reservations
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reservations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,6 +43,7 @@ def init_db():
         )
     ''')
     
+    # Table for knowledge base configuration
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +52,7 @@ def init_db():
         )
     ''')
     
+    # Official & Comprehensive Knowledge Base for Spoon & Stable
     default_kb = """
 === RESTAURANT OVERVIEW ===
 Name: Spoon and Stable
@@ -175,7 +181,7 @@ def chat(req: ChatRequest):
             "type": "function",
             "function": {
                 "name": "book_reservation",
-                "description": "Call this ONLY when ALL 5 reservation details are clearly stated across history: Name, Phone, Date, Time, and Guest count.",
+                "description": "Call this ONLY when ALL 5 reservation details are clearly provided across conversation history: Name, Phone, Date, Time, and Guest count.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -198,12 +204,12 @@ Your tone is warm, polite, professional, and concise.
 Knowledge Base:
 {kb_content}
 
-CRITICAL INSTRUCTIONS:
-- Respond naturally to greetings like 'hi', 'hello', or 'hey' by welcoming the guest warmly.
-- Keep all answers concise (2 to 3 sentences maximum).
+CRITICAL RULES:
+- Keep answers concise (2 to 3 sentences maximum).
 - Look at the conversation history to track details provided so far.
-- IF the user wants to book and ALL 5 details (Name, Phone, Date, Time, Guests) are present, call `book_reservation`.
-- IF details are still missing for a booking, simply ask for the missing items in conversational text.
+- IF the guest asks for a reservation/booking but hasn't given all 5 details (Name, Phone, Date, Time, Guests), ask ONLY for the missing items in text. DO NOT call `book_reservation`.
+- ONLY call `book_reservation` when ALL 5 details are explicitly present in the history.
+- Parlour Bar policy: Walk-ins only (No reservations).
     """
 
     messages_payload = [{"role": "system", "content": system_prompt}]
@@ -220,44 +226,40 @@ CRITICAL INSTRUCTIONS:
             model="llama-3.3-70b-versatile",
             messages=messages_payload,
             tools=tools,
+            tool_choice="auto",
             temperature=0.3,
             max_tokens=300
         )
 
         message = completion.choices[0].message
 
-        # 1. Tool Execution Path
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 if tool_call.function.name == "book_reservation":
+                    args = json.loads(tool_call.function.arguments)
+                    name = args.get("name", "Guest")
+                    phone = str(args.get("phone", ""))
+                    date = args.get("date", "")
+                    time = args.get("time", "")
+                    raw_guests = args.get("guests", 1)
                     try:
-                        args = json.loads(tool_call.function.arguments)
-                        name = args.get("name", "Guest")
-                        phone = str(args.get("phone", ""))
-                        date = args.get("date", "")
-                        time = args.get("time", "")
-                        raw_guests = args.get("guests", 1)
-                        try:
-                            guests = int(raw_guests)
-                        except (ValueError, TypeError):
-                            guests = 1
+                        guests = int(raw_guests)
+                    except (ValueError, TypeError):
+                        guests = 1
 
-                        res_id = save_reservation(name=name, phone=phone, date=date, time=time, guests=guests)
-                        return {
-                            "response": f"Thank you, {name}! Your reservation for {guests} guest(s) on {date} at {time} is confirmed. (ID: #{res_id})"
-                        }
-                    except Exception as inner_e:
-                        print(f"Tool Parsing Error: {inner_e}")
+                    res_id = save_reservation(name=name, phone=phone, date=date, time=time, guests=guests)
+                    return {
+                        "response": f"Thank you, {name}! Your reservation for {guests} guest(s) on {date} at {time} is confirmed. (ID: #{res_id})"
+                    }
 
-        # 2. Regular Text Response Path
         if message.content:
             return {"response": message.content}
 
-        return {"response": "Good day! How may I assist you with Spoon & Stable today?"}
+        return {"response": "I would be happy to assist with your reservation! Could you please share your Name, Phone Number, Date, Time, and Party Size?"}
 
     except Exception as e:
-        print(f"Chat Endpoint Exception: {e}")
-        return {"response": "Hello! Welcome to Spoon & Stable. How may I assist you today?"}
+        print(f"API Error: {e}")
+        return {"response": "I would be happy to help with a reservation! Please share your name, phone number, preferred date, time, and party size."}
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard():
