@@ -9,7 +9,6 @@ from groq import Groq
 
 app = FastAPI(title="Spoon & Stable Concierge API")
 
-# Enable CORS for frontend widgets
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,18 +17,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Groq Client
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-# Database Path Configuration (Vercel serverless fix)
 DB_PATH = "/tmp/restaurant.db" if os.environ.get("VERCEL") else "restaurant.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Table for reservations
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reservations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +38,6 @@ def init_db():
         )
     ''')
     
-    # Table for knowledge base configuration
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +46,6 @@ def init_db():
         )
     ''')
     
-    # Complete detailed Knowledge Base for Spoon & Stable
     default_kb = """
 === RESTAURANT OVERVIEW ===
 Name: Spoon & Stable
@@ -63,7 +57,7 @@ Phone: (612) 224-9850
 Dinner:
 - Sunday - Thursday: 5:00 PM – 10:00 PM
 - Friday & Saturday: 5:00 PM – 11:00 PM
-The Parlour Bar: Open daily from 4:00 PM until late (Walk-ins welcome).
+The Parlour Bar: Open daily from 4:00 PM until late (Walk-ins welcome, NO reservations).
 
 === MENU HIGHLIGHTS ===
 Starters:
@@ -103,7 +97,6 @@ Drinks:
     conn.commit()
     conn.close()
 
-# Initialize DB structure on startup
 init_db()
 
 def get_db():
@@ -111,7 +104,6 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-# Helper to save reservation
 def save_reservation(name: str, phone: str, date: str, time: str, guests: int):
     conn = get_db()
     cursor = conn.cursor()
@@ -124,7 +116,6 @@ def save_reservation(name: str, phone: str, date: str, time: str, guests: int):
     conn.close()
     return res_id
 
-# --- Data Models ---
 class ChatRequest(BaseModel):
     message: str
 
@@ -138,9 +129,6 @@ class ReservationRequest(BaseModel):
 class UpdateMenuRequest(BaseModel):
     new_text: str
 
-# --- Endpoints ---
-
-# 1. Main Root URL -> Serves the Chat Web Interface
 @app.get("/", response_class=HTMLResponse)
 def home():
     index_path = os.path.join(os.path.dirname(__file__), "index.html")
@@ -149,13 +137,11 @@ def home():
             return f.read()
     return "<h1>index.html not found in root directory</h1>"
 
-# 2. Manual Reservation Endpoint
 @app.post("/reserve")
 def make_reservation(req: ReservationRequest):
     res_id = save_reservation(req.name, req.phone, req.date, req.time, req.guests)
     return {"status": "success", "reservation_id": res_id}
 
-# 3. Chat Endpoint (Concierge with Function Calling)
 @app.post("/chat")
 def chat(req: ChatRequest):
     if not client:
@@ -172,15 +158,15 @@ def chat(req: ChatRequest):
             "type": "function",
             "function": {
                 "name": "book_reservation",
-                "description": "Call this ONLY when the guest explicitly asks to book a reservation and has provided Name, Phone, Date, Time, and Guest Count.",
+                "description": "Book a reservation ONLY when the guest explicitly provided ALL 5 items: Name, Phone, Date, Time, and Guest Count in their message. DO NOT guess missing fields.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Full name of the guest"},
-                        "phone": {"type": "string", "description": "Phone number"},
-                        "date": {"type": "string", "description": "Reservation date"},
-                        "time": {"type": "string", "description": "Reservation time"},
-                        "guests": {"type": "integer", "description": "Number of guests"}
+                        "name": {"type": "string", "description": "Full name"},
+                        "phone": {"type": "string", "description": "Phone number provided by user"},
+                        "date": {"type": "string", "description": "Date requested"},
+                        "time": {"type": "string", "description": "Time requested"},
+                        "guests": {"type": "integer", "description": "Party size"}
                     },
                     "required": ["name", "phone", "date", "time", "guests"]
                 }
@@ -192,14 +178,14 @@ def chat(req: ChatRequest):
 You are the elite AI Concierge for 'Spoon & Stable'. 
 Your tone is warm, professional, sophisticated, and concise.
 
-Use the following detailed Knowledge Base to answer guest queries accurately:
+Knowledge Base:
 {kb_content}
 
-RULES:
-- Keep responses concise (around 2 to 3 sentences maximum).
-- If the user asks about dietary accommodations or menu details, check the knowledge base and answer accurately. Do not guarantee unlisted options (e.g., halal certification).
-- DO NOT mention reservations or ask for booking details UNLESS the user explicitly asks to book a table.
-- When the guest explicitly wants to book and provides ALL 5 required details, trigger `book_reservation`.
+CRITICAL RULES:
+- Keep answers concise (2 to 3 sentences maximum).
+- NEVER call `book_reservation` or say a reservation is confirmed unless the user explicitly gave you ALL 5 pieces of information: Name, Phone Number, Date, Time, and Party Size.
+- If ANY detail is missing (e.g. phone number), kindly ask the user to provide the missing item before confirming.
+- Note policy: The Parlour Bar does NOT accept reservations (walk-ins only).
     """
 
     try:
@@ -211,34 +197,39 @@ RULES:
             ],
             tools=tools,
             tool_choice="auto",
-            temperature=0.4,
-            max_tokens=250
+            temperature=0.3,
+            max_tokens=300
         )
 
         message = completion.choices[0].message
 
-        # Handle Function Call if AI decides to book table
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 if tool_call.function.name == "book_reservation":
-                    args = json.loads(tool_call.function.arguments)
-                    res_id = save_reservation(
-                        name=args["name"],
-                        phone=args["phone"],
-                        date=args["date"],
-                        time=args["time"],
-                        guests=int(args["guests"])
-                    )
-                    return {
-                        "response": f"Thank you, {args['name']}! Your reservation for {args['guests']} guest(s) on {args['date']} at {args['time']} is confirmed. (ID: #{res_id})"
-                    }
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                        # Check if any field is missing or generic
+                        if not args.get("phone") or args.get("phone") in ["unknown", "none", "n/a"]:
+                            return {"response": f"I would be delighted to reserve a table for {args.get('name', 'you')}, but could you please provide your phone number to complete the booking?"}
+                        
+                        res_id = save_reservation(
+                            name=args["name"],
+                            phone=str(args["phone"]),
+                            date=args["date"],
+                            time=args["time"],
+                            guests=int(args["guests"])
+                        )
+                        return {
+                            "response": f"Thank you, {args['name']}! Your reservation for {args['guests']} guest(s) on {args['date']} at {args['time']} is confirmed. (ID: #{res_id})"
+                        }
+                    except Exception:
+                        return {"response": "To finalize your booking, please confirm your Name, Phone Number, Date, Time, and Party Size."}
 
-        return {"response": message.content if message.content else "How else may I assist you today?"}
+        return {"response": message.content if message.content else "How may I assist you with Spoon & Stable today?"}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"response": "I apologize, but I couldn't process that request right now. How else may I assist you with your dining plans?"}
 
-# 4. Admin Dashboard View
 @app.get("/admin", response_class=HTMLResponse)
 def admin_dashboard():
     dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
@@ -247,7 +238,6 @@ def admin_dashboard():
             return f.read()
     return "<h1>dashboard.html not found in root directory</h1>"
 
-# 5. Admin: Get Reservations
 @app.get("/admin/reservations")
 def get_reservations():
     conn = get_db()
@@ -260,7 +250,6 @@ def get_reservations():
         "reservations": reservations
     }
 
-# 6. Admin: Get Knowledge Base Configuration
 @app.get("/admin/get-config")
 def get_config():
     conn = get_db()
@@ -268,7 +257,6 @@ def get_config():
     conn.close()
     return {"knowledge_base": row["value"] if row else ""}
 
-# 7. Admin: Update Knowledge Base Configuration
 @app.post("/admin/update-menu")
 def update_menu(req: UpdateMenuRequest):
     conn = get_db()
